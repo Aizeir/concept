@@ -7,6 +7,7 @@ CHUNK_W = 8
 CHUNK_H = 16
 chunk_inbounds = lambda x,y,z: 0<=x<CHUNK_W and 0<=z<CHUNK_W and 0<=y<CHUNK_H
 
-FLOOR = 8
+MIN_GEN_HEIGHT = 8
+SEA_LEVEL = 16
 MAX_GEN_HEIGHT = 40
 BREAK_DIST = 10

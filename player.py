@@ -54,14 +54,6 @@ class Player(Entity):
             texture_scale=(1/atlas_w,1/atlas_h),
             shader=basic_lighting_shader
         )
-        self.selecting_cube = Entity(
-            model="cube",
-            visible=False,
-            scale=1.0001,
-            color=color.black,
-            alpha=0.2,
-            shader=basic_lighting_shader
-        )
 
         selection_anims = [
             Mesh(
@@ -138,16 +130,12 @@ class Player(Entity):
             self.selection = (block_pos,face)
             self.breaking_cube.visible_setter(True)
             self.breaking_cube.position_setter(block_pos+Vec3(.5))
-            self.selecting_cube.visible_setter(True)
-            self.selecting_cube.position_setter(block_pos+Vec3(.5))
         # hide selection block
         else:
             self.selection = None
             self.breaking_cube.visible_setter(False)
-            self.selecting_cube.visible_setter(False)
             self.end_trans("break", 0)
             self.end_trans("place", 0)
-        
 
         # - Block selection animation
         if self.placing_block and self.transitions["place"][0] == 1:
@@ -178,7 +166,7 @@ class Player(Entity):
             self.end_trans("break",0)
 
         # - Placement
-        if mouse.right and not self.placing_block and not self.breaking_block:
+        if mouse.right and not self.placing_block and not self.breaking_block and self.selection:
             if self.place_block():
                 self.activate_trans("place", False)
         elif not mouse.right and self.placing_block:
@@ -225,7 +213,7 @@ class Player(Entity):
 
         x,y,z = self.selection[0]+face_normals[self.selection[1]]
         if not (min_x <= x <= max_x and min_y <= y <= max_y and min_z <= z <= max_z):
-            self.world.set_block(x,y,z, GRASS)
+            self.world.set_block(x,y,z, PLANKS)
             return True
         else:
             return False

@@ -4,7 +4,7 @@ from perlin_noise import PerlinNoise
 from ursina import *
 from blocks import *
 from settings import *
-from ursina.shaders.basic_lighting_shader import basic_lighting_shader
+from shader import *
 
 # --- Constants
 face_normals = [(0,0,1),(0,0,-1),(1,0,0),(-1,0,0),(0,1,0),(0,-1,0)]
@@ -41,43 +41,38 @@ def atlas_face_uv(tex_coord):
     ]
 
 
-def chunk_mesh(mesh, content):
-    verts = []
-    tris = []
+def chunk_mesh(mesh, content, chunk_pos):
+    vertices = []
+    triangles = []
     uvs = []
     normals = []
+    colors = []
+    cx,cy,cz = chunk_pos
 
     for x in range(CHUNK_W):
         for z in range(CHUNK_W):
             for y in range(CHUNK_H):
-
                 block = content[x,y,z]
-                if block == AIR:
-                    continue
+                if block == AIR:  continue
 
                 for i in range(6):
                     dx,dy,dz = face_normals[i]
+                    nx,ny,nz = x+dx, y+dy, z+dz
+                    if chunk_inbounds(nx,ny,nz) and content[nx,ny,nz] != AIR: continue
 
-                    nx, ny, nz = x+dx, y+dy, z+dz
-
-                    if chunk_inbounds(nx,ny,nz) and content[nx,ny,nz] != AIR:
-                        continue
-
-                    idx = len(verts)
-
-                    verts.extend(
-                        cube_vertices[i*4:(i+1)*4]
-                    )
-                    verts[-4:] = [Vec3(x,y,z) + v for v in verts[-4:]]
-
-                    tris.extend([idx, idx+2, idx+1, idx, idx+3, idx+2])
+                    idx = len(vertices)
+                    vertices.extend([(x+vx, y+vy, z+vz) for vx,vy,vz in cube_vertices[i*4:(i+1)*4]])
+                    triangles.extend([idx, idx+2, idx+1, idx, idx+3, idx+2])
                     uvs.extend(atlas_face_uv(block.tex_coords[i]))
                     normals.extend([face_normals[i]]*4)
+                    colors.extend([cx*CHUNK_W+x,cy*CHUNK_H+y,cz*CHUNK_W+z,block.id]*4)
 
-    mesh.vertices = verts
-    mesh.triangles = tris
+
+    mesh.vertices = vertices
+    mesh.triangles = triangles
     mesh.uvs = uvs
     mesh.normals = normals
+    mesh.colors = colors
     return mesh
 
 # ---
@@ -91,15 +86,19 @@ class World:
 
         self.chunk_meshes = {}
         self.chunk_contents = {}
+        self.all_chunks = Entity(shader=shader)
         self.chunks = {(dcx,dcy,dcz): Entity(
+            parent=self.all_chunks,
             model=Mesh(),
             texture="assets/atlas",
             texture_scale=(1/atlas_w,1/atlas_h),
-            shader=basic_lighting_shader
+            shader=shader,
         )\
         for dcz in range(2*RENDER_DISTANCE_XZ+1)
         for dcy in range(2*RENDER_DISTANCE_Y+1)
         for dcx in range(2*RENDER_DISTANCE_XZ+1)}
+
+        self.all_chunks.set_shader_input("light_direction", light_direction)
 
         self.chunk_queue = []
 
@@ -108,7 +107,7 @@ class World:
 
         value = 0.0
         freq = 1.0
-        amplitude = 1.0
+        amplitude = 2.0
         max_value = 0.0
 
         for i in range(4):
@@ -120,7 +119,7 @@ class World:
         value = (value + 1) / 2
         value = pow(value, 1) * 0.8
         
-        ground = FLOOR + int(value * (MAX_GEN_HEIGHT - FLOOR))
+        ground = MIN_GEN_HEIGHT + int(value * (MAX_GEN_HEIGHT - MIN_GEN_HEIGHT))
         return ground
 
     def chunk_procedural(self, cx,cy,cz):
@@ -130,7 +129,7 @@ class World:
             for z in range(CHUNK_W):
                 ground = self.compute_ground(cx,cz,x,z)
                 dirt = ground - 3
-                for y in range(0, max(CHUNK_H, ground-cy*CHUNK_H+1)):
+                for y in range(CHUNK_H):
                     wy = cy*CHUNK_H+y
                     if wy <= 0:
                         content[x,y,z] = BEDROCK
@@ -146,12 +145,13 @@ class World:
                         else:
                             content[x,y,z] = STONE
                         
-                    elif dirt <= wy < ground:
-                        content[x,y,z] = DIRT
-                    elif wy == ground:
-                        content[x,y,z] = GRASS
+                    elif dirt <= wy <= ground:
+                        if wy <= SEA_LEVEL+1:
+                            content[x,y,z] = SAND
+                        else:
+                            content[x,y,z] = (DIRT,GRASS)[wy==ground]
                     else:
-                        pass #content[x,y,z] = AIR
+                        content[x,y,z] = (AIR,WATER)[wy <= SEA_LEVEL]
                         
         return content
     
@@ -175,7 +175,7 @@ class World:
             self.chunk_contents[chunk_pos] = self.chunk_procedural(*chunk_pos)
             #tp = time.time()
             mesh = Mesh(vertices=[], triangles=[], uvs=[], normals=[])
-            chunk_mesh(mesh, self.chunk_contents[chunk_pos])
+            chunk_mesh(mesh, self.chunk_contents[chunk_pos], chunk_pos)
             #tb = time.time()
             mesh.generate()
             self.chunk_meshes[chunk_pos] = mesh
@@ -185,7 +185,7 @@ class World:
         # Si besoin de recréér
         elif mesh:
             mesh = Mesh(vertices=[], triangles=[], uvs=[], normals=[])
-            chunk_mesh(mesh, self.chunk_contents[chunk_pos])
+            chunk_mesh(mesh, self.chunk_contents[chunk_pos], chunk_pos)
             mesh.generate()
             self.chunk_meshes[chunk_pos] = mesh
         #t2 = time.time()

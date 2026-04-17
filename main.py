@@ -1,9 +1,7 @@
 from threading import Thread
 from ursina import *
-from ursina.prefabs.first_person_controller import FirstPersonController
 from player import Player
 from world import *
-from ursina.shaders.basic_lighting_shader import basic_lighting_shader
 from settings import *
 
 
@@ -22,7 +20,7 @@ class Game:
         self.all_colliders = []
 
         # Player
-        self.player = Player(self, position=(0,20,0))
+        self.player = Player(self, position=(0,MAX_GEN_HEIGHT+1,0))
         self.world.player = self.player
         self.player_last_chunk = None
         self.cursor = Entity(parent=camera.ui, model='quad', texture="assets/cursor", scale=.05)
@@ -70,6 +68,13 @@ class Game:
 
         # Update colliders
         self.update_colliders()
+
+        # Update uniforms
+        if self.player.selection:
+            self.world.all_chunks.set_shader_input("selection", (*self.player.selection[0], 1))
+        else:
+            self.world.all_chunks.set_shader_input("selection", (0,0,0,0))
+
 
 game = Game()
 def update(): game.update()
