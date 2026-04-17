@@ -1,7 +1,7 @@
 from world import *
 from ursina import *
 
-def dda(start_pos, direction):
+def dda(get_block, start_pos, direction, chunk):
     # Initialisation des variables de direction et de position
     player_block = Vec3(floor(start_pos.x),floor(start_pos.y),floor(start_pos.z))
     block = Vec3(player_block)
