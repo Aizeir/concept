@@ -34,7 +34,7 @@ def dda(get_block, start_pos, direction, chunk):
         elif (distToY <= distToZ):
             block.y += step.y
             distToY += distUnitY
-            face = (FDOWN,FUP)[step.y < 0] 
+            face = (FBOTTOM,FTOP)[step.y < 0] 
 
         else:
             block.z += step.z
@@ -43,8 +43,7 @@ def dda(get_block, start_pos, direction, chunk):
             
         # Bloc solide
         blocktype = get_block(*block)
-        solid = blocktype != AIR
-        if (solid and block != player_block):
+        if (blocktype.type == BT_SOLID and block != player_block):
             return block, face
 
     # Retourne une valeur par défaut si aucun bloc solide n'est touché

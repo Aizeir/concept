@@ -5,20 +5,21 @@ atlas_h = 8
 def tex_coord(tex_id):
     return (tex_id%atlas_w, atlas_h-1 - tex_id//atlas_w)
 
-FFRONT,FBACK,FRIGHT,FLEFT,FUP,FDOWN = range(6)
+FFRONT,FBACK,FRIGHT,FLEFT,FTOP,FBOTTOM = range(6)
+BT_SOLID, BT_WATER, BT_AIR = "solid","water","air"
 
 idx = 0
 class Block:
-    def __init__(self, tex_ids=None, solid=True):
+    def __init__(self, tex_ids=None, type=BT_SOLID):
         global idx; self.id = idx; idx += 1
         self.tex_ids = tex_ids
         self.tex_coords = [tex_coord(tex_id) for tex_id in tex_ids] if tex_ids else None
-        self.solid = solid
+        self.type = type
         
     def __repr__(self):
-        return f"<Block[{self.id}]>"
+        return f"<Block[{self.id} | {self.type}]>"
 
-AIR = Block()
+AIR = Block(type=BT_AIR)
 GRASS = Block([2]*4+[0,1])
 DIRT = Block([1]*6)
 SAND = Block([8]*6)
@@ -33,4 +34,4 @@ TREETOP = Block([15]*4+[16,11])
 PLANKS = Block([13]*6)
 LEAVES = Block([12]*6)
 FRUIT_LEAVES = Block([19]*6)
-WATER = Block([17]*6, solid=False)
+WATER = Block([17]*6, type=BT_WATER)

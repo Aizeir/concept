@@ -26,14 +26,20 @@ class Player(Entity):
         self.mouse_sensitivity = Vec2(100)
 
         self.gravity = 1
+        self.water_gravity = .4
+        self.water_gravity_max = self.water_gravity * 10
         self.grounded = False
         self.jump_force = 20
+        self.water_jump_force = 14
         self.jumping = False
         self.sprint = False
+        self.fly = False
+        self.underwater = False
+        self.inventory = PLANKS
 
         self.transitions = { # value / start / reverse / duration
             "sprint": [0, 0, True, .2],
-            "break":  [0, 0, True, 0.05],
+            "break":  [0, 0, True, .25],
             "place":  [0, 0, True, .25],
         } 
         
@@ -87,8 +93,7 @@ class Player(Entity):
     
     @property
     def chunk(self):
-        pos = self.position
-        return int(pos.x//CHUNK_W), int(pos.y//CHUNK_H), int(pos.z//CHUNK_W)
+        return chunk_of_blockv(self.position)
 
     @property
     def breaking_block(self):
@@ -171,17 +176,39 @@ class Player(Entity):
                 self.activate_trans("place", False)
         elif not mouse.right and self.placing_block:
             self.end_trans("place",0)
-            
-        # Collisions
+        
+        # - Placement
+        if mouse.middle and not self.placing_block and not self.breaking_block and self.selection:
+            self.inventory = self.world.chunk_contents[chunk_of_blockv(self.selection[0])][local_of_blockv(self.selection[0])]
+        
+        # Underwater
+        block = pos_to_blockv(self.position+Vec3(0,1,0))
+        self.underwater = self.world.chunk_contents[chunk_of_blockv(block)][local_of_blockv(block)].type == BT_WATER
+
+        # Movement
         direction = Vec3(
             self.forward * (held_keys['w'] - held_keys['s'])
             + self.right * (held_keys['d'] - held_keys['a'])
         ).normalized()
+
+        # Fly
+        if self.fly:
+            self.velocity = direction * self.speed + (self.up * (held_keys["space"]-held_keys["shift"]) + direction) * self.speed
+            self.position += self.velocity * min(0.1, time.dt)
+            return
         
         self.velocity.xz = direction.xz * self.speed
-        self.velocity.y -= self.gravity
+        
+        if self.underwater:
+            self.velocity.y += self.water_gravity * (-1,1)[held_keys["space"]]
+            if held_keys["shift"]: self.velocity.y -= self.water_gravity
+            self.velocity.y = max(self.velocity.y, -self.water_gravity_max)
+        else:
+            self.velocity.y -= self.gravity
 
         dv = self.velocity * min(0.1, time.dt)
+  
+        # Collisions
         if self.collisions(Vec3(dv.x, 0, 0)):
             self.velocity.x = 0
         else:
@@ -197,7 +224,6 @@ class Player(Entity):
             self.velocity.y = 0
         else:
             self.position += Vec3(0,dv.y,0)
-            
 
     def break_block(self):
         self.world.set_block(*self.selection[0], AIR)
@@ -213,7 +239,7 @@ class Player(Entity):
 
         x,y,z = self.selection[0]+face_normals[self.selection[1]]
         if not (min_x <= x <= max_x and min_y <= y <= max_y and min_z <= z <= max_z):
-            self.world.set_block(x,y,z, PLANKS)
+            self.world.set_block(x,y,z, self.inventory)
             return True
         else:
             return False
@@ -233,7 +259,7 @@ class Player(Entity):
             for y in range(min_y, max_y + 1):
                 for z in range(min_z, max_z + 1):
                     block = self.world.get_block(x, y, z)
-                    if block != AIR:
+                    if block.type == BT_SOLID:
                         if dv.y < 0:
                             pos.y = y + 1
                             self.grounded = True
@@ -244,7 +270,7 @@ class Player(Entity):
 
     def jump(self):
         if not self.grounded: return
-        self.velocity.y = self.gravity * self.jump_force
+        self.velocity.y = self.gravity * (self.jump_force,self.water_jump_force)[self.underwater]
 
     def on_enable(self):
         mouse.locked = True

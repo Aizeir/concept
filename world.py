@@ -41,7 +41,8 @@ def atlas_face_uv(tex_coord):
     ]
 
 
-def chunk_mesh(mesh, content, chunk_pos):
+def chunk_mesh(mesh, contents, chunk_pos, type=BT_SOLID):
+    content = contents[chunk_pos]
     vertices = []
     triangles = []
     uvs = []
@@ -49,23 +50,36 @@ def chunk_mesh(mesh, content, chunk_pos):
     colors = []
     cx,cy,cz = chunk_pos
 
-    for x in range(CHUNK_W):
-        for z in range(CHUNK_W):
-            for y in range(CHUNK_H):
-                block = content[x,y,z]
-                if block == AIR:  continue
+    for x,y,z in CHUNK_COORDS_MAP:
+        block = content[x,y,z]
+        if block.type != type: continue
 
-                for i in range(6):
-                    dx,dy,dz = face_normals[i]
-                    nx,ny,nz = x+dx, y+dy, z+dz
-                    if chunk_inbounds(nx,ny,nz) and content[nx,ny,nz] != AIR: continue
+        for i in range(6):
+            dx,dy,dz = face_normals[i]
+            nx,ny,nz = x+dx, y+dy, z+dz
+            inbounds = chunk_inbounds(nx,ny,nz)
+            wnx,wny,wnz = cx*CHUNK_W+nx,cy*CHUNK_H+ny,cz*CHUNK_W+nz
 
-                    idx = len(vertices)
-                    vertices.extend([(x+vx, y+vy, z+vz) for vx,vy,vz in cube_vertices[i*4:(i+1)*4]])
-                    triangles.extend([idx, idx+2, idx+1, idx, idx+3, idx+2])
-                    uvs.extend(atlas_face_uv(block.tex_coords[i]))
-                    normals.extend([face_normals[i]]*4)
-                    colors.extend([cx*CHUNK_W+x,cy*CHUNK_H+y,cz*CHUNK_W+z,block.id]*4)
+            # Quelques conditions
+            if inbounds and type == 'water' and i != FTOP and\
+                chunk_of_block(wnx,wny,wnz) in contents and\
+                contents[chunk_of_block(wnx,wny,wnz)][local_of_block(wnx,wny,wnz)].type == BT_SOLID: continue
+            if inbounds and content[nx,ny,nz].type == type: continue
+
+            # Bordures chunk
+            if not inbounds:
+                wnx, wny, wnz = cx*CHUNK_W+nx,cy*CHUNK_H+ny,cz*CHUNK_W+nz
+                ncx, ncy, ncz = chunk_of_block(wnx,wny,wnz)
+                lnx, lny, lnz = local_of_block(wnx,wny,wnz)
+                if (ncx,ncy,ncz) in contents and contents[ncx,ncy,ncz][lnx,lny,lnz].type == type:
+                    continue
+
+            idx = len(vertices)
+            vertices.extend([(x+vx, y+vy, z+vz) for vx,vy,vz in cube_vertices[i*4:(i+1)*4]])
+            triangles.extend([idx, idx+2, idx+1, idx, idx+3, idx+2])
+            uvs.extend(atlas_face_uv(block.tex_coords[i]))
+            normals.extend([face_normals[i]]*4)
+            colors.extend([cx*CHUNK_W+x,cy*CHUNK_H+y,cz*CHUNK_W+z,block.id]*4)
 
 
     mesh.vertices = vertices
@@ -73,6 +87,7 @@ def chunk_mesh(mesh, content, chunk_pos):
     mesh.uvs = uvs
     mesh.normals = normals
     mesh.colors = colors
+    mesh.generate()
     return mesh
 
 # ---
@@ -87,18 +102,30 @@ class World:
         self.chunk_meshes = {}
         self.chunk_contents = {}
         self.all_chunks = Entity(shader=shader)
+        self.all_waters = Entity(shader=shader)
         self.chunks = {(dcx,dcy,dcz): Entity(
             parent=self.all_chunks,
             model=Mesh(),
             texture="assets/atlas",
             texture_scale=(1/atlas_w,1/atlas_h),
             shader=shader,
-        )\
-        for dcz in range(2*RENDER_DISTANCE_XZ+1)
-        for dcy in range(2*RENDER_DISTANCE_Y+1)
-        for dcx in range(2*RENDER_DISTANCE_XZ+1)}
+        ) for dcx,dcy,dcz in RENDER_COORDS_MAP}
+
+        self.waters = {(dcx,dcy,dcz): Entity(
+            parent=self.all_waters,
+            model=Mesh(),
+            texture="assets/atlas",
+            texture_scale=(1/atlas_w,1/atlas_h),
+            shader=water_shader,
+        ) for dcx,dcy,dcz in RENDER_COORDS_MAP}
+
+        for x in self.chunks.values():
+            x.double_sided = True
+        for x in self.waters.values():
+            x.double_sided = True
 
         self.all_chunks.set_shader_input("light_direction", light_direction)
+        self.all_waters.set_shader_input("light_direction", light_direction)
 
         self.chunk_queue = []
 
@@ -155,61 +182,58 @@ class World:
                         
         return content
     
-    def reload_chunk(self, dcx,dcy,dcz, clear=False, mesh=False):
-        application.pause()
-        # pcx,pcy,pcz = self.player.chunk
-        # dcx,dcy,dcz = cx-pcx+RENDER_DISTANCE_XZ,cy-pcy+RENDER_DISTANCE_Y,cz-pcz+RENDER_DISTANCE_XZ
+    def reload_chunk(self, dcx,dcy,dcz, recreate=False):
         c = self.chunks[dcx,dcy,dcz]
+        w = self.waters[dcx,dcy,dcz]
         chunk_pos = (
             self.player.chunk[0] + dcx-RENDER_DISTANCE_XZ,
             self.player.chunk[1] + dcy-RENDER_DISTANCE_Y,
             self.player.chunk[2] + dcz-RENDER_DISTANCE_XZ
         )
 
-        # Clear le VBO (nul ursina)
-        if clear: c.model = Mesh(); return
-        
-        #t = time.time()
-        # Si nouveau chunk
+        # Si besoin de recréér le mesh
         if chunk_pos not in self.chunk_meshes:
-            self.chunk_contents[chunk_pos] = self.chunk_procedural(*chunk_pos)
-            #tp = time.time()
-            mesh = Mesh(vertices=[], triangles=[], uvs=[], normals=[])
-            chunk_mesh(mesh, self.chunk_contents[chunk_pos], chunk_pos)
-            #tb = time.time()
-            mesh.generate()
-            self.chunk_meshes[chunk_pos] = mesh
-            #tc = time.time()
-            #print("recreation", tp-t, tb-tp, tc-tb)
-
-        # Si besoin de recréér
-        elif mesh:
-            mesh = Mesh(vertices=[], triangles=[], uvs=[], normals=[])
-            chunk_mesh(mesh, self.chunk_contents[chunk_pos], chunk_pos)
-            mesh.generate()
-            self.chunk_meshes[chunk_pos] = mesh
-        #t2 = time.time()
-        c.model = self.chunk_meshes[chunk_pos]
-        c.position = Vec3(
+            self.chunk_meshes[chunk_pos] = (Mesh(),Mesh())
+            recreate = True
+        
+        if recreate:
+            mesh, water_mesh = self.chunk_meshes[chunk_pos]
+            mesh.clear(); water_mesh.clear()
+            chunk_mesh(mesh, self.chunk_contents, chunk_pos)
+            chunk_mesh(water_mesh, self.chunk_contents, chunk_pos, type=BT_WATER)
+            self.chunk_meshes[chunk_pos] = (mesh, water_mesh)
+            
+        # Affecter nv position et mesh
+        c.model, w.model = self.chunk_meshes[chunk_pos]
+        c.position = w.position = (
             chunk_pos[0]*CHUNK_W,
             chunk_pos[1]*CHUNK_H,
             chunk_pos[2]*CHUNK_W
         )
-        #t3 = time.time()
-        application.resume()
-        #print("chunk reloaded", t3-t, ":", t2-t, "+", t3-t2)
 
     def get_block(self, wx, wy, wz):
-        cx, cy, cz = wx//CHUNK_W, wy//CHUNK_H, wz//CHUNK_W
-        lx, ly, lz = wx%CHUNK_W, wy%CHUNK_H, wz%CHUNK_W
+        cx, cy, cz = chunk_of_block(wx,wy,wz)
+        lx, ly, lz = local_of_block(wx,wy,wz)
         if (cx,cy,cz) not in self.chunk_contents: return AIR
         return self.chunk_contents[cx,cy,cz][lx,ly,lz]
 
     def set_block(self, wx,wy,wz, block):
-        cx, cy, cz = wx//CHUNK_W, wy//CHUNK_H, wz//CHUNK_W
-        lx, ly, lz = wx%CHUNK_W, wy%CHUNK_H, wz%CHUNK_W
+        cx, cy, cz = chunk_of_block(wx,wy,wz)
+        lx, ly, lz = local_of_block(wx,wy,wz)
         self.chunk_contents[cx,cy,cz][lx,ly,lz] = block
         
         pcx,pcy,pcz = self.player.chunk
         dcx,dcy,dcz = cx-pcx+RENDER_DISTANCE_XZ,cy-pcy+RENDER_DISTANCE_Y,cz-pcz+RENDER_DISTANCE_XZ
-        self.reload_chunk(dcx,dcy,dcz, False, True)
+        application.pause()
+        self.reload_chunk(dcx,dcy,dcz, True)
+        
+        # Recharger l'éventuel chunk d'à coté
+        for i in range(6):
+            dx, dy, dz = face_normals[i]
+            ncx, ncy, ncz = chunk_of_block(wx+dx, wy+dy, wz+dz)
+            ndcx,ndcy,ndcz = ncx-pcx+RENDER_DISTANCE_XZ,ncy-pcy+RENDER_DISTANCE_Y,ncz-pcz+RENDER_DISTANCE_XZ
+
+            # Bordures chunk
+            if not chunk_inbounds(lx+dx,ly+dy,lz+dz):
+                self.reload_chunk(ndcx,ndcy,ndcz, True)
+        application.resume()
