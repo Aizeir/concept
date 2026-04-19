@@ -43,7 +43,7 @@ def dda(get_block, start_pos, direction, chunk):
             
         # Bloc solide
         blocktype = get_block(*block)
-        if (blocktype.type == BT_SOLID and block != player_block):
+        if (blocktype.type in CHUNK_TYPES[CT_TERRAIN] and block != player_block):
             return block, face
 
     # Retourne une valeur par défaut si aucun bloc solide n'est touché

@@ -11,7 +11,7 @@ app = Ursina()
 class Game:
     def __init__(self):
         # Lighting
-        self.sky = Sky(color=color.rgb(100/255, 160/255, 255/255), texture=None)
+        self.sky = Sky(color=color.rgb(100/255, 160/255, 255/255), texture="sky_sunset.jpg")
         self.sun = DirectionalLight()
         self.sun.look_at(Vec3(1, -2, 1))
         self.ambient_light = AmbientLight()
@@ -51,45 +51,10 @@ class Game:
 
     def update(self, finalquad):
         # Update chunks
-        chunk = Vec3(self.player.chunk)
+        chunk = Vec2(self.player.chunk)
         if chunk != self.player_last_chunk:
-            cx,cy,cz = self.player_last_chunk = chunk
-            new_chunks = []
-            # En cas de nouveaux chunks a générer
-            for dcx, dcy, dcz in RENDER_COORDS_MAP:
-                chunk_pos = (
-                    cx + dcx-RENDER_DISTANCE_XZ,
-                    cy + dcy-RENDER_DISTANCE_Y,
-                    cz + dcz-RENDER_DISTANCE_XZ
-                )
-                if chunk_pos not in self.world.chunk_contents:
-                    new_chunks.append((dcx,dcy,dcz))
-                    self.world.chunk_contents[chunk_pos] = self.world.chunk_procedural(*chunk_pos)
-
-            # Refaire les meshs des voisins
-            for (dcx,dcy,dcz) in list(set([(int(dc[0]+d[0]),int(dc[1]+d[1]),int(dc[2]+d[2])) for dc in new_chunks for d in face_normals])):
-                chunk_pos = (
-                    cx + dcx-RENDER_DISTANCE_XZ,
-                    cy + dcy-RENDER_DISTANCE_Y,
-                    cz + dcz-RENDER_DISTANCE_XZ
-                )
-                if chunk_pos not in self.world.chunk_meshes: continue
-                mesh, water_mesh = self.world.chunk_meshes[chunk_pos]
-                mesh.clear(); water_mesh.clear()
-                chunk_mesh(mesh, self.world.chunk_contents, chunk_pos)
-                chunk_mesh(water_mesh, self.world.chunk_contents, chunk_pos, type=BT_WATER)
-                self.world.chunk_meshes[chunk_pos] = (mesh, water_mesh)
-
-            # d'abord clear les vbo ou jsp quoi
-            for dcx, dcy, dcz in RENDER_COORDS_MAP:
-                self.world.chunks[dcx,dcy,dcz].model = Mesh()
-                self.world.waters[dcx,dcy,dcz].model = Mesh()
-                       
-            # changer les chunks mais PAS refaire les meshs (sauf nv chunks)
-            application.pause()
-            for dcx, dcy, dcz in RENDER_COORDS_MAP:
-                self.world.reload_chunk(dcx,dcy,dcz)
-            application.resume()
+            self.player_last_chunk = chunk
+            self.world.update_chunks()
 
         # Update colliders
         self.update_colliders()

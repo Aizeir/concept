@@ -15,12 +15,12 @@ uniform vec4 selection;
 void main() {
     float value = max(0, (dot(light_direction, world_normal)+1)/2);
     float lighting = 0.25 + value * 1.5;
-    vec3 color = texture(p3d_Texture0, texcoord).rgb * p3d_ColorScale.rgb * lighting;
-
+    vec4 color = texture(p3d_Texture0, texcoord) * p3d_ColorScale;
+    color.rgb *= lighting;
     // Sélection
     if (selection[3] == 1 && block_pos == ivec3(selection.xyz)) {
-        color *= 0.8;
+        color.rgb *= 0.8;
     }
 
-    fragColor = vec4(color.rgb, 1.0);
+    fragColor = color;
 }

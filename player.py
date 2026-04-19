@@ -179,11 +179,11 @@ class Player(Entity):
         
         # - Placement
         if mouse.middle and not self.placing_block and not self.breaking_block and self.selection:
-            self.inventory = self.world.chunk_contents[chunk_of_blockv(self.selection[0])][local_of_blockv(self.selection[0])]
+            self.inventory = self.world.get_block(*self.selection[0])
         
         # Underwater
         block = pos_to_blockv(self.position+Vec3(0,1,0))
-        self.underwater = self.world.chunk_contents[chunk_of_blockv(block)][local_of_blockv(block)].type == BT_WATER
+        self.underwater = self.world.get_block(*block).type == BT_WATER
 
         # Movement
         direction = Vec3(
@@ -239,8 +239,7 @@ class Player(Entity):
 
         x,y,z = self.selection[0]+face_normals[self.selection[1]]
         if not (min_x <= x <= max_x and min_y <= y <= max_y and min_z <= z <= max_z):
-            self.world.set_block(x,y,z, self.inventory)
-            return True
+            return self.world.set_block(x,y,z, self.inventory)
         else:
             return False
 
