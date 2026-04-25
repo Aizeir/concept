@@ -230,7 +230,8 @@ class World:
 
             # Enlever le chunk de la liste d'attente
             self.new_chunks.put(chunk_pos)
-            with self.chunk_queue_lock: self.chunk_waitlist.discard(chunk_pos)
+            with self.chunk_queue_lock:
+                self.chunk_waitlist.discard(chunk_pos)
 
             # signaler que l'item est traité
             self.chunk_queue.task_done()
@@ -238,13 +239,13 @@ class World:
     def update_chunks(self):
         # Générer les nouveaux chunks
         pcx,pcz = self.player.chunk
-        for dcx, dcz in RENDER_COORDS:
-            chunk_pos = (
-                pcx + dcx-RENDER_DISTANCE,
-                pcz + dcz-RENDER_DISTANCE
-            )
-            if chunk_pos not in self.chunk_contents:
-                with self.chunk_queue_lock:
+        with self.chunk_queue_lock:
+            for dcx, dcz in RENDER_COORDS:
+                chunk_pos = (
+                    pcx + dcx-RENDER_DISTANCE,
+                    pcz + dcz-RENDER_DISTANCE
+                )
+                if chunk_pos not in self.chunk_contents:
                     if chunk_pos not in self.chunk_waitlist:
                         self.chunk_waitlist.add(chunk_pos)
                         self.chunk_queue.put(chunk_pos)

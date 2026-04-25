@@ -61,11 +61,11 @@ class Game:
 
         # Update uniforms
         if self.player.selection:
-            self.world.all_chunks.set_shader_input("selection", (*self.player.selection[0], 1))
-            self.world.all_waters.set_shader_input("selection", (*self.player.selection[0], 1))
+            self.world.all_chunks.set_shader_input("selection", (*self.player.selection[0], self.player.transitions["break"][0]))
+            self.world.all_waters.set_shader_input("selection", (*self.player.selection[0], self.player.transitions["break"][0]))
         else:
-            self.world.all_chunks.set_shader_input("selection", (0,0,0,0))
-            self.world.all_waters.set_shader_input("selection", (0,0,0,0))
+            self.world.all_chunks.set_shader_input("selection", (0,0,0,-1))
+            self.world.all_waters.set_shader_input("selection", (0,0,0,-1))
         finalquad.setShaderInput("underwater",self.player.underwater)
 
 game = Game()

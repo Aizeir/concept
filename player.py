@@ -158,6 +158,7 @@ class Player(Entity):
         elif self.selection:
             self.breaking_cube.model_setter(self.hover_anim)
             self.breaking_cube.alpha_setter(self.hover_alpha)
+        self.breaking_cube.alpha_setter(0)
         
         # - Breaking block
         # release block

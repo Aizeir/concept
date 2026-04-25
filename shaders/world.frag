@@ -18,8 +18,11 @@ void main() {
     vec4 color = texture(p3d_Texture0, texcoord) * p3d_ColorScale;
     color.rgb *= lighting;
     // Sélection
-    if (selection[3] == 1 && block_pos == ivec3(selection.xyz)) {
-        color.rgb *= 0.8;
+    if (selection[3] != -1 && block_pos == ivec3(selection.xyz)) {
+        if (selection[3] > 0)
+            color.rgb *= (.2 + pow(1-selection[3],.5)*.8);
+        else if (selection[3] == 0)
+            color.rgb *= .8;
     }
 
     fragColor = color;
