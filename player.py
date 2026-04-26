@@ -1,21 +1,16 @@
 from ursina import *
 from dda import dda
+from physics import Physics
 from world import *
 from ursina.shaders import basic_lighting_shader
 
 text = Text()
 
-class Player(Entity):
+class Player(Physics):
     def __init__(self, game, **kwargs):
-        super().__init__(**kwargs)
-        self.game = game
-        self.world = game.world
+        super().__init__(game, size=Vec3(.5,1.8,.5), **kwargs)
 
-        self.speed = 5
-        self.size = Vec3(.5,1.8,.5)
         self.cam_off = Vec3(0, 1.5, 0)
-        self.velocity = Vec3()
-
         self.camera_pivot = Entity(parent=self, position=self.cam_off)
         camera.parent = self.camera_pivot
         camera.position = Vec3.zero
@@ -25,17 +20,14 @@ class Player(Entity):
         mouse.locked = True
         self.mouse_sensitivity = Vec2(100)
 
-        self.gravity = 1
-        self.water_gravity = .4
-        self.water_gravity_max = self.water_gravity * 10
-        self.grounded = False
         self.jump_force = 20
         self.water_jump_force = 14
         self.jumping = False
         self.sprint = False
         self.fly = False
-        self.underwater = False
-        self.inventory = PLANKS
+
+        self.inventory = [(PLANKS,10) for _ in range(10)]
+        self.slot = 0
 
         self.transitions = { # value / start / reverse / duration
             "sprint": [0, 0, True, .2],
@@ -43,11 +35,8 @@ class Player(Entity):
             "place":  [0, 0, True, .25],
         } 
         
-        self.traverse_target = scene     # by default, it will collide with everything. change this to change the raycasts' traverse targets.
-        self.ignore_list = [self, ]
         self.on_destroy = self.on_disable
 
-        self.block_colliders = Entity()
         self.break_colliders = Entity()
 
         self.selection = None
@@ -77,6 +66,7 @@ class Player(Entity):
 
     def on_window_ready(self):
         camera.rotation = Vec3.zero
+        self.world.spawn(self.position, "cow")
 
     def activate_trans(self, name, reverse=False):
         self.transitions[name][1] = time.time()
@@ -91,10 +81,6 @@ class Player(Entity):
     def head(self):
         return self.position + self.cam_off
     
-    @property
-    def chunk(self):
-        return chunk_of_blockv(self.position)
-
     @property
     def breaking_block(self):
         return not self.transitions["break"][2]
@@ -180,13 +166,10 @@ class Player(Entity):
         
         # - Placement
         if mouse.middle and not self.placing_block and not self.breaking_block and self.selection:
-            self.inventory = self.world.get_block(*self.selection[0])
+            self.inventory[self.slot] = (self.world.get_block(*self.selection[0]), self.inventory[self.slot][1])
         
-        # Underwater
-        block = pos_to_blockv(self.position+Vec3(0,1,0))
-        self.underwater = self.world.get_block(*block).type == BT_WATER
-
-        # Movement
+        ## Movement
+        # Direction
         direction = Vec3(
             self.forward * (held_keys['w'] - held_keys['s'])
             + self.right * (held_keys['d'] - held_keys['a'])
@@ -197,37 +180,21 @@ class Player(Entity):
             self.velocity = direction * self.speed + (self.up * (held_keys["space"]-held_keys["shift"]) + direction) * self.speed
             self.position += self.velocity * min(0.1, time.dt)
             return
+        else:
+            self.velocity.xz = direction.xz * self.speed
         
-        self.velocity.xz = direction.xz * self.speed
-        
+        # Underwater
         if self.underwater:
-            self.velocity.y += self.water_gravity * (-1,1)[held_keys["space"]]
-            if held_keys["shift"]: self.velocity.y -= self.water_gravity
-            self.velocity.y = max(self.velocity.y, -self.water_gravity_max)
-        else:
-            self.velocity.y -= self.gravity
+            if held_keys["space"]:
+                self.velocity.y += self.water_gravity * 2
+            if held_keys["shift"]:
+                self.velocity.y -= self.water_gravity
 
-        dv = self.velocity * min(0.1, time.dt)
-  
         # Collisions
-        if self.collisions(Vec3(dv.x, 0, 0)):
-            self.velocity.x = 0
-        else:
-            self.position += Vec3(dv.x, 0, 0)
-
-        if self.collisions(Vec3(0, 0, dv.z)):
-            self.velocity.z = 0
-        else:
-            self.position += Vec3(0, 0, dv.z)
-
-        self.grounded = False
-        if self.collisions(Vec3(0, dv.y, 0)):
-            self.velocity.y = 0
-        else:
-            self.position += Vec3(0,dv.y,0)
+        super().update()
 
     def break_block(self):
-        self.world.set_block(*self.selection[0], AIR)
+        self.world.break_block(*self.selection[0])
 
     def place_block(self):
         pos = self.position
@@ -240,33 +207,9 @@ class Player(Entity):
 
         x,y,z = self.selection[0]+face_normals[self.selection[1]]
         if not (min_x <= x <= max_x and min_y <= y <= max_y and min_z <= z <= max_z):
-            return self.world.set_block(x,y,z, self.inventory)
+            return self.world.set_block(x,y,z, self.inventory[self.slot][0])
         else:
             return False
-
-    def collisions(self, dv):
-        # Hitbox rectangle
-        pos = self.position
-        min_x = math.floor(pos.x + dv.x - self.size.x/2)
-        max_x = math.floor(pos.x + dv.x + self.size.x/2)
-        min_y = math.floor(pos.y + dv.y)
-        max_y = math.floor(pos.y + dv.y + self.size.y)
-        min_z = math.floor(pos.z + dv.z - self.size.z/2)
-        max_z = math.floor(pos.z + dv.z + self.size.z/2)
-
-        # Collisions
-        for x in range(min_x, max_x + 1):
-            for y in range(min_y, max_y + 1):
-                for z in range(min_z, max_z + 1):
-                    block = self.world.get_block(x, y, z)
-                    if block.type == BT_SOLID:
-                        if dv.y < 0:
-                            pos.y = y + 1
-                            self.grounded = True
-                        if dv.y > 0:
-                            pos.y = y - self.size.y
-                        return True
-        return False
 
     def jump(self):
         if not self.grounded: return
@@ -284,3 +227,16 @@ class Player(Entity):
         self._original_camera_transform = camera.transform  # store original position and rotation
         camera.world_parent = scene
 
+
+    def input(self, key):
+        global _scroll
+        match key:
+            case "tab":
+                self.fly = not self.fly
+            case "scroll up":
+                _scroll = not _scroll
+                self.slot = max(0, self.slot-_scroll)
+            case "scroll down":
+                _scroll = not _scroll
+                self.slot = min(INV_SIZE-1, self.slot+_scroll)
+_scroll = True

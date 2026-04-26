@@ -1,16 +1,10 @@
 from ursina import *
+from settings import *
 
-atlas_w = 4
-atlas_h = 8
 def tex_coord(tex_id):
     return (tex_id%atlas_w, atlas_h-1 - tex_id//atlas_w)
 
-FFRONT,FBACK,FRIGHT,FLEFT,FTOP,FBOTTOM = range(6)
-BT_SOLID, BT_WATER, BT_AIR, BT_PLANT = range(4)
-MESH_CUBE, MESH_X = "cube","x"
 
-CT_TERRAIN, CT_WATER = range(2)
-CHUNK_TYPES = {CT_TERRAIN: (BT_SOLID,BT_PLANT), CT_WATER:(BT_WATER,)}
 
 idx = 0
 class Block:
@@ -79,7 +73,12 @@ x_vertices = [
     Vec3(0,0,0), Vec3(1,0,1), Vec3(1,1,1), Vec3(0,1,0),
     Vec3(1,0,1), Vec3(0,0,0), Vec3(0,1,0), Vec3(1,1,1),
 ]
-
+x_triangles = []
+x_normals = []
+for i in range(4):
+    j = i*4
+    x_triangles.extend([j, j+2, j+1,  j, j+3, j+2])
+    x_normals.extend([x_face_normals[i]]*4)
 
 def atlas_face_uv(tex_coord):
     tx,ty = tex_coord

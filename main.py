@@ -1,5 +1,6 @@
 from threading import Thread
 from ursina import *
+from hud import HUD
 from player import Player
 from world import *
 from settings import *
@@ -28,6 +29,9 @@ class Game:
         self.cursor = Entity(parent=camera.ui, model='quad', texture="assets/cursor", scale=.05)
         self.update_colliders()
 
+        # HUD
+        self.hud = HUD(self)
+
     def update_colliders(self): 
         for e in self.all_colliders: destroy(e)
         self.all_colliders.clear()
@@ -41,7 +45,7 @@ class Game:
                     wx, wy, wz = px+dx, py+dy, pz+dz
                     if self.world.get_block(wx, wy, wz).type == BT_SOLID:
                         self.all_colliders.append(Entity(
-                            parent=self.player.block_colliders,
+                            parent=self.world.block_colliders,
                             position=Vec3(wx+.5, wy+.5, wz+.5),
                             collider='box',
                             visible=False,
@@ -68,6 +72,9 @@ class Game:
             self.world.all_waters.set_shader_input("selection", (0,0,0,-1))
         finalquad.setShaderInput("underwater",self.player.underwater)
 
+        # HUD
+        self.hud.update()
+
 game = Game()
 
 # post process
@@ -85,6 +92,6 @@ finalquad.setShaderInput("tex", tex)
 def update():
     game.update(finalquad)
 def input(key):
-    if key=="tab": game.player.fly = not game.player.fly
+    game.player.input(key)
 
 app.run()

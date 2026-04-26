@@ -1,10 +1,13 @@
+from concurrent.futures import ThreadPoolExecutor
 from random import choice, randint
 from threading import Thread
 import queue
 import threading
 from perlin_noise import PerlinNoise
 from ursina import *
+from animal import Animal
 from blocks import *
+from drop import Drop
 from settings import *
 from shader import *
 
@@ -34,26 +37,27 @@ class World:
             texture="assets/atlas",
             texture_scale=(1/atlas_w,1/atlas_h),
             shader=water_shader,
+            double_sided=True,
         ) for dcx,dcz in RENDER_COORDS}
-
 
         self.all_chunks.set_shader_input("light_direction", light_direction)
         self.all_waters.set_shader_input("light_direction", light_direction)
 
-        self.chunk_queue = queue.Queue()
-        self.new_chunks = queue.Queue()
-        self.chunk_worker = threading.Thread(target=self.update_chunk_queue, daemon=True)
-        self.chunk_worker.start()
+        self.drops = []
+        self.block_colliders = Entity()
 
-        self.chunk_waitlist = set()
-        self.chunk_queue_lock = threading.Lock()
+        # Animals
+        self.animals = Entity()
+
+    def spawn(self, pos, animal):
+        Animal(self, pos, animal)
 
     def compute_ground(self, cx, cz, x, z):
         pos = (cx*CHUNK_W+x, cz*CHUNK_W+z)
 
         value = 0.0
         freq = 1.0
-        amplitude = 3.0
+        amplitude = 1.0
         max_value = 0.0
 
         for i in range(4):
@@ -109,21 +113,8 @@ class World:
                         content[x,y,z] = AIR
                         
         return content
-    
-    def load_chunk(self, dcx,dcz):
-        """ Affecte la bonne position et le bon mesh à l'entité-chunk """
-        chunk_pos = (
-            self.player.chunk[0] + dcx-RENDER_DISTANCE,
-            self.player.chunk[1] + dcz-RENDER_DISTANCE
-        )
-        c,w = self.chunks[dcx,dcz], self.waters[dcx,dcz]
-        if chunk_pos not in self.chunk_meshes: return
-        c.model, w.model = self.chunk_meshes[chunk_pos]
-        c.position = w.position = (
-            chunk_pos[0]*CHUNK_W, 0, chunk_pos[1]*CHUNK_W
-        )
 
-    def chunk_create_mesh(self, mesh, chunk_pos, chunk_type=CT_TERRAIN):
+    def _create_mesh_data(self, chunk_pos, chunk_type=CT_TERRAIN):
         content = self.chunk_contents[chunk_pos]
         vertices = []
         triangles = []
@@ -166,23 +157,37 @@ class World:
                     normals.extend([x_face_normals[i]]*4)
                     colors.extend([cx*CHUNK_W+x,y,cz*CHUNK_W+z,block.id]*4)
 
-        mesh.vertices = vertices
-        mesh.triangles = triangles
-        mesh.uvs = uvs
-        mesh.normals = normals
-        mesh.colors = colors
-        mesh.generate()
-        return mesh
+        return {"vertices": vertices, "triangles": triangles, "uvs": uvs, "normals": normals, "colors": colors}
 
     def create_mesh(self, chunk_pos):
         if chunk_pos not in self.chunk_meshes:
-            self.chunk_meshes[chunk_pos] = (Mesh(),Mesh())
-        
-        mesh, water_mesh = self.chunk_meshes[chunk_pos] 
-        mesh.clear(); water_mesh.clear()
-        self.chunk_create_mesh(mesh, chunk_pos)
-        self.chunk_create_mesh(water_mesh, chunk_pos, chunk_type=CT_WATER)
-        self.chunk_meshes[chunk_pos] = (mesh, water_mesh)
+            self.chunk_meshes[chunk_pos] = (Mesh(), Mesh())
+
+        mesh, water_mesh = self.chunk_meshes[chunk_pos]
+        mesh_data, water_data = self._create_mesh_data(chunk_pos, CT_TERRAIN), self._create_mesh_data(chunk_pos, CT_WATER)
+
+        mesh.clear()
+        for k,v in mesh_data.items(): setattr(mesh, k, v)
+        mesh.generate()
+
+        water_mesh.clear()
+        for k,v in water_data.items(): setattr(water_mesh, k, v)
+        water_mesh.generate()
+    
+
+    def load_chunk(self, dcx,dcz):
+        """ Affecte la bonne position et le bon mesh à l'entité-chunk """
+        chunk_pos = (
+            self.player.chunk[0] + dcx-RENDER_DISTANCE,
+            self.player.chunk[1] + dcz-RENDER_DISTANCE
+        )
+        c,w = self.chunks[dcx,dcz], self.waters[dcx,dcz]
+        if chunk_pos not in self.chunk_meshes: return
+        c.model, w.model = self.chunk_meshes[chunk_pos]
+        c.position = w.position = (
+            chunk_pos[0]*CHUNK_W, 0, chunk_pos[1]*CHUNK_W
+        )
+
 
     def get_block(self, wx, wy, wz):
         cx, cz = chunk_of_block(wx,wz)
@@ -193,7 +198,6 @@ class World:
     def set_block(self, wx,wy,wz, block):
         # Pas possible de poser en <0 et >= CHUNK_H
         if not y_inbounds(wy): return False
-        
         # Changer le block
         cx, cz = chunk_of_block(wx,wz)
         lx, lz = local_of_block(wx,wz)
@@ -218,42 +222,29 @@ class World:
         application.resume()
         return True
     
-    def update_chunk_queue(self):
-        while True:
-            # Récupérer un chunk de la queue
-            try: chunk_pos = self.chunk_queue.get(timeout=0.1)
-            except queue.Empty: continue
-
-            # Génerer le chunk
-            c = self.chunk_procedural(*chunk_pos)
-            self.chunk_contents[chunk_pos] = c
-
-            # Enlever le chunk de la liste d'attente
-            self.new_chunks.put(chunk_pos)
-            with self.chunk_queue_lock:
-                self.chunk_waitlist.discard(chunk_pos)
-
-            # signaler que l'item est traité
-            self.chunk_queue.task_done()
+    def break_block(self, x,y,z):
+        block = self.get_block(x,y,z)
+        if block.type in CHUNK_TYPES[CT_TERRAIN]:
+            self.drops.append(Drop(self, (x,y,z), block))
+        self.set_block(x,y,z, AIR)
 
     def update_chunks(self):
         # Générer les nouveaux chunks
         pcx,pcz = self.player.chunk
-        with self.chunk_queue_lock:
-            for dcx, dcz in RENDER_COORDS:
-                chunk_pos = (
-                    pcx + dcx-RENDER_DISTANCE,
-                    pcz + dcz-RENDER_DISTANCE
-                )
-                if chunk_pos not in self.chunk_contents:
-                    if chunk_pos not in self.chunk_waitlist:
-                        self.chunk_waitlist.add(chunk_pos)
-                        self.chunk_queue.put(chunk_pos)
-
+        new_chunks = []
+        for dcx, dcz in RENDER_COORDS:
+            chunk_pos = (
+                pcx + dcx-RENDER_DISTANCE,
+                pcz + dcz-RENDER_DISTANCE
+            )
+            if chunk_pos not in self.chunk_contents:
+                c = self.chunk_procedural(*chunk_pos)
+                self.chunk_contents[chunk_pos] = c
+                new_chunks.append(chunk_pos)
+            
         # Recréér les meshs des nouveaux chunks
         recreate = []
-        while not self.new_chunks.empty():
-            cx,cz = self.new_chunks.get_nowait()
+        for cx,cz in new_chunks:
             for dcx,dcz in ((0,0),*face_normals_xz):
                 if (cx+dcx, cz+dcz) in self.chunk_contents:
                     recreate.append((cx+dcx, cz+dcz))
@@ -264,6 +255,7 @@ class World:
         for dcx, dcz in RENDER_COORDS:
             self.chunks[dcx,dcz].model = Mesh()
             self.waters[dcx,dcz].model = Mesh()
+        
         # Changer les chunks
         for dcx, dcz in RENDER_COORDS:
             self.load_chunk(dcx,dcz)
