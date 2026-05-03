@@ -17,6 +17,10 @@ class Physics(Entity):
         self.water_gravity_max = self.water_gravity * 10
         self.grounded = False
 
+        self.jump_force = 14
+        self.water_jump_force = 14
+        self.jumping = False
+
         self.traverse_target = scene     # by default, it will collide with everything. change this to change the raycasts' traverse targets.
         self.ignore_list = [self, ]
     
@@ -25,9 +29,17 @@ class Physics(Entity):
         return chunk_of_blockv(self.position)
     
     @property
+    def block(self):
+        return pos_to_blockv(self.position)
+    
+    @property
     def underwater(self):
         block = pos_to_blockv(self.position+Vec3(0,self.size.y,0))
         return self.world.get_block(*block).type == BT_WATER     
+
+    def jump(self):
+        if not self.grounded: return
+        self.velocity.y = self.gravity * (self.jump_force,self.water_jump_force)[self.underwater]
 
     def update(self):
         """ A exécuter après la détermination de velocity !!! """
@@ -37,20 +49,27 @@ class Physics(Entity):
         else:
             self.velocity.y -= self.gravity
 
-        # Collisions
+        # Raycasts
         dv = self.velocity * min(0.1, time.dt)
-        if self.collisions(Vec3(dv.x, 0, 0)):
+        r = self.size[0]
+        feet_ray = raycast(self.position+Vec3(0,.5,0), dv, traverse_target=self.traverse_target, ignore=self.ignore_list, distance=r, debug=False)
+        head_ray = raycast(self.position+Vec3(0,self.size[1]-.1,0), dv, traverse_target=self.traverse_target, ignore=self.ignore_list, distance=r, debug=False)            
+        y_ray = raycast(self.position+Vec3(0,self.size[1],0), Vec3(0,-1,0), traverse_target=self.traverse_target, ignore=self.ignore_list, distance=self.size[1], debug=False)            
+        xz_ray_hit = feet_ray.hit or head_ray.hit
+
+        # Collisions
+        if self.collisions(Vec3(dv.x, 0, 0)) or xz_ray_hit:
             self.velocity.x = 0
         else:
             self.position += Vec3(dv.x, 0, 0)
 
-        if self.collisions(Vec3(0, 0, dv.z)):
+        if self.collisions(Vec3(0, 0, dv.z)) or xz_ray_hit:
             self.velocity.z = 0
         else:
             self.position += Vec3(0, 0, dv.z)
 
         self.grounded = False
-        if self.collisions(Vec3(0, dv.y, 0)):
+        if self.collisions(Vec3(0, dv.y, 0)) or y_ray.hit:
             self.velocity.y = 0
         else:
             self.position += Vec3(0,dv.y,0)
@@ -66,6 +85,7 @@ class Physics(Entity):
         max_z = math.floor(pos.z + dv.z + self.size.z/2)
 
         # Collisions
+        blocks_list = []
         for x in range(min_x, max_x + 1):
             for y in range(min_y, max_y + 1):
                 for z in range(min_z, max_z + 1):
@@ -76,5 +96,6 @@ class Physics(Entity):
                             self.grounded = True
                         if dv.y > 0:
                             pos.y = y - self.size.y
-                        return True
-        return False
+                        blocks_list.append((x,y,z))
+        return blocks_list
+        

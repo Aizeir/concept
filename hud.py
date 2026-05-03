@@ -31,7 +31,7 @@ class HUD:
         
         slots = load_texture("assets/atlas.png")
         self.slots = [
-            Entity(
+            [Entity(
                 parent=self.hotbar,
                 model="quad",
                 texture=slots,
@@ -39,11 +39,15 @@ class HUD:
                 texture_offset=(0,0),
                 scale=rel_size(hotbar_size, (8,8)),
                 position=rel_pos(hotbar_size, (2+i*9, 2), (8,8), 1),
-            )
+            ),
+            Text(
+                "1",
+                parent=self.hotbar,
+                position=rel_pos(hotbar_size, (2+i*9, 2), (8,8), 2),
+                scale = (3,15)
+            )]
             for i in range(INV_SIZE)
         ]
-
-        self.inv_cache = None
 
         self.selector = Entity(
             parent=self.hotbar,
@@ -53,11 +57,16 @@ class HUD:
         )
 
     def update(self):
-        if self.player.inventory != self.inv_cache:
-            self.inv_cache = self.player.inventory.copy()
+        inv = self.player.inventory
 
-            for i in range(INV_SIZE):
-                block, amt = self.inv_cache[i]
-                self.slots[i].texture_offset = Vec2(block.tex_coords[FFRONT])/atlas_size
+        for i in range(INV_SIZE):
+            if inv[i] is None:
+                self.slots[i][0].visible=False
+                self.slots[i][1].text = ""
+            else:
+                block, amt = inv[i]
+                self.slots[i][0].visible=True
+                self.slots[i][0].texture_offset = Vec2(block.tex_coords[FFRONT])/atlas_size
+                self.slots[i][1].text = str(amt)
 
         self.selector.position_setter(rel_pos(hotbar_size, (1+self.player.slot*9, 1), (10,10), .5))

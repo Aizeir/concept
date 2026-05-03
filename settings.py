@@ -1,6 +1,7 @@
 from itertools import product
 from math import floor
 from ursina import *
+from sounds import *
 
 RENDER_DISTANCE = 5
 RENDER_COORDS = list(product(range(2*RENDER_DISTANCE+1), range(2*RENDER_DISTANCE+1)))
@@ -17,7 +18,7 @@ local_of_block = lambda wx,wz: (int(wx %CHUNK_W),int(wz %CHUNK_W))
 local_of_blockv = lambda wv: (int(wv[0]%CHUNK_W),int(wv[1]),int(wv[2]%CHUNK_W))
 
 MIN_GEN_HEIGHT = 8
-SEA_LEVEL = 16
+SEA_LEVEL = 18
 MAX_GEN_HEIGHT = 40
 BREAK_DIST = 10
 
@@ -37,3 +38,4 @@ MESH_CUBE, MESH_X = "cube","x"
 CT_TERRAIN, CT_WATER = range(2)
 CHUNK_TYPES = {CT_TERRAIN: (BT_SOLID,BT_PLANT), CT_WATER:(BT_WATER,)}
 FACE_AMT = {BT_SOLID: 6, BT_PLANT:4}
+

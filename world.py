@@ -23,6 +23,7 @@ class World:
         self.chunk_contents = {}
         self.all_chunks = Entity(shader=shader)
         self.all_waters = Entity(shader=water_shader)
+        self.all_animals = Entity(shader=animal_shader)
         self.chunks = {(dcx,dcz): Entity(
             parent=self.all_chunks,
             model=Mesh(),
@@ -42,12 +43,8 @@ class World:
 
         self.all_chunks.set_shader_input("light_direction", light_direction)
         self.all_waters.set_shader_input("light_direction", light_direction)
-
+        self.all_animals.set_shader_input("light_direction", light_direction)
         self.drops = []
-        self.block_colliders = Entity()
-
-        # Animals
-        self.animals = Entity()
 
     def spawn(self, pos, animal):
         Animal(self, pos, animal)
@@ -57,7 +54,7 @@ class World:
 
         value = 0.0
         freq = 1.0
-        amplitude = 1.0
+        amplitude = 1.5
         max_value = 0.0
 
         for i in range(4):
@@ -108,6 +105,10 @@ class World:
                             content[x,y,z] = choice((PUPPY, DANDELION, DEADBUSH, GRASS, MUSHROOM))
                         else:
                             content[x,y,z] = AIR
+                        
+                        if randint(1,600) == 1:
+                            wx,wz = cx*CHUNK_W+x,cz*CHUNK_W+z
+                            self.spawn((wx,y+1,wz), choice(("cow","sheep","fox")))
                     
                     else:
                         content[x,y,z] = AIR
@@ -190,11 +191,15 @@ class World:
 
 
     def get_block(self, wx, wy, wz):
+        """ Retourne le type de block (AIR si le bloc n'existe pas) """
         cx, cz = chunk_of_block(wx,wz)
         lx, lz = local_of_block(wx,wz)
-        if (cx,cz) not in self.chunk_contents or not y_inbounds(wy): return AIR
+        if not self.block_exists(wx,wy,wz): return AIR
         return self.chunk_contents[cx,cz][lx,wy,lz]
 
+    def block_exists(self, wx,wy,wz):
+        return chunk_of_block(wx,wz) in self.chunk_contents and y_inbounds(wy)
+        
     def set_block(self, wx,wy,wz, block):
         # Pas possible de poser en <0 et >= CHUNK_H
         if not y_inbounds(wy): return False
@@ -218,6 +223,14 @@ class World:
                 ndcx,ndcz = ncx-pcx+RENDER_DISTANCE,ncz-pcz+RENDER_DISTANCE
                 self.create_mesh((ncx,ncz))
                 self.load_chunk(ndcx,ndcz)
+
+        # Ecoulement eau
+        if block == WATER:
+            for n in face_normals:
+                if n == face_normals[FTOP]: continue
+                nx,ny,nz = wx+n[0],wy+n[1],wz+n[2]
+                if self.block_exists(nx,ny,nz) and self.get_block(nx,ny,nz) == AIR:
+                    self.set_block(nx,ny,nz, WATER)
                     
         application.resume()
         return True
@@ -225,8 +238,19 @@ class World:
     def break_block(self, x,y,z):
         block = self.get_block(x,y,z)
         if block.type in CHUNK_TYPES[CT_TERRAIN]:
-            self.drops.append(Drop(self, (x,y,z), block))
+            self.player.try_add_item(block)
+             #self.drops.append(Drop(self, (x,y,z), block))
         self.set_block(x,y,z, AIR)
+
+        if self.get_block(x,y+1,z).type == BT_PLANT:
+            self.break_block(x,y+1,z)
+
+        # Ecoulement eau
+        for n in face_normals:
+            if n == face_normals[FBOTTOM]: continue
+            if self.get_block(x+n[0],y+n[1],z+n[2]) == WATER:
+                self.set_block(x,y,z, WATER)
+                break
 
     def update_chunks(self):
         # Générer les nouveaux chunks
@@ -259,3 +283,5 @@ class World:
         # Changer les chunks
         for dcx, dcz in RENDER_COORDS:
             self.load_chunk(dcx,dcz)
+
+            

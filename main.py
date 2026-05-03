@@ -20,38 +20,15 @@ class Game:
 
         # World
         self.world = World(self)
-        self.all_colliders = []
 
         # Player
         self.player = Player(self, position=(0,MAX_GEN_HEIGHT+1,0))
         self.world.player = self.player
         self.player_last_chunk = None
         self.cursor = Entity(parent=camera.ui, model='quad', texture="assets/cursor", scale=.05)
-        self.update_colliders()
 
         # HUD
         self.hud = HUD(self)
-
-    def update_colliders(self): 
-        for e in self.all_colliders: destroy(e)
-        self.all_colliders.clear()
-
-        px, py, pz = floor(self.player.x), floor(self.player.y), floor(self.player.z)
-
-        # Collisions
-        for dx in range(-2,3):
-            for dy in range(-3,3):
-                for dz in range(-2,3):
-                    wx, wy, wz = px+dx, py+dy, pz+dz
-                    if self.world.get_block(wx, wy, wz).type == BT_SOLID:
-                        self.all_colliders.append(Entity(
-                            parent=self.world.block_colliders,
-                            position=Vec3(wx+.5, wy+.5, wz+.5),
-                            collider='box',
-                            visible=False,
-                            # color = color.black,
-                            # model="cube"
-                        ))
 
     def update(self, finalquad):
         # Update chunks
@@ -59,9 +36,6 @@ class Game:
         if chunk != self.player_last_chunk:
             self.player_last_chunk = chunk
             self.world.update_chunks()
-
-        # Update colliders
-        self.update_colliders()
 
         # Update uniforms
         if self.player.selection:
@@ -72,8 +46,15 @@ class Game:
             self.world.all_waters.set_shader_input("selection", (0,0,0,-1))
         finalquad.setShaderInput("underwater",self.player.underwater)
 
+        tod = (1 + sin(time.time() * 6.28 / 300)) / 2
+        self.world.all_chunks.set_shader_input("tod", tod)
+        self.world.all_waters.set_shader_input("tod", tod)
+        self.world.all_animals.set_shader_input("tod", tod)
+
         # HUD
         self.hud.update()
+
+
 
 game = Game()
 

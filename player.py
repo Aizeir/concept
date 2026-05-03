@@ -20,13 +20,11 @@ class Player(Physics):
         mouse.locked = True
         self.mouse_sensitivity = Vec2(100)
 
-        self.jump_force = 20
-        self.water_jump_force = 14
-        self.jumping = False
         self.sprint = False
         self.fly = False
+        self.moving = False
 
-        self.inventory = [(PLANKS,10) for _ in range(10)]
+        self.inventory = [[PLANKS,10]] + [None]*9
         self.slot = 0
 
         self.transitions = { # value / start / reverse / duration
@@ -36,9 +34,6 @@ class Player(Physics):
         } 
         
         self.on_destroy = self.on_disable
-
-        self.break_colliders = Entity()
-
         self.selection = None
 
         self.breaking_cube = Entity(
@@ -66,16 +61,30 @@ class Player(Physics):
 
     def on_window_ready(self):
         camera.rotation = Vec3.zero
-        self.world.spawn(self.position, "cow")
 
     def activate_trans(self, name, reverse=False):
         self.transitions[name][1] = time.time()
         self.transitions[name][2] = reverse
 
+        if name == "break": hit_sound.play()
+
     def end_trans(self, name, value):
         self.transitions[name][1] -= self.transitions[name][3]
         self.transitions[name][2] = not value
         self.transitions[name][0] = value
+
+        if name == "break": hit_sound.stop()
+
+
+    def try_add_item(self, item, amount=1):
+        for i in range(INV_SIZE):
+            if self.inventory[i] and self.inventory[i][0] == item:
+                self.inventory[i][1] += amount
+                return
+        for i in range(INV_SIZE):
+            if not self.inventory[i]:
+                self.inventory[i] = [item, amount]
+                return
 
     @property
     def head(self):
@@ -151,7 +160,7 @@ class Player(Physics):
         if not mouse.left and self.breaking_block:
             self.end_trans("break", 0)
         # break block
-        elif mouse.left and not self.breaking_block and not self.placing_block:
+        elif mouse.left and not self.breaking_block and not self.placing_block and self.selection:
             self.activate_trans("break", False)
         # reset if block change
         if self.breaking_block and block_swap:
@@ -159,15 +168,18 @@ class Player(Physics):
 
         # - Placement
         if mouse.right and not self.placing_block and not self.breaking_block and self.selection:
-            if self.place_block():
-                self.activate_trans("place", False)
+            if self.inventory[self.slot] is not None:
+                if self.place_block():
+                    self.activate_trans("place", False)
+                    self.inventory[self.slot][1] -= 1
+                    if self.inventory[self.slot][1] == 0:
+                        self.inventory[self.slot] = None
         elif not mouse.right and self.placing_block:
             self.end_trans("place",0)
         
-        # - Placement
         if mouse.middle and not self.placing_block and not self.breaking_block and self.selection:
-            self.inventory[self.slot] = (self.world.get_block(*self.selection[0]), self.inventory[self.slot][1])
-        
+            self.inventory[self.slot] = [self.world.get_block(*self.selection[0]), 100]
+
         ## Movement
         # Direction
         direction = Vec3(
@@ -175,6 +187,13 @@ class Player(Physics):
             + self.right * (held_keys['d'] - held_keys['a'])
         ).normalized()
 
+        moving = held_keys['w'] or held_keys['s'] or held_keys['d'] or held_keys['a']
+        if moving and not self.moving:
+            walk_sound.play()
+        if not moving and self.moving:
+            walk_sound.stop()
+        self.moving = moving
+        
         # Fly
         if self.fly:
             self.velocity = direction * self.speed + (self.up * (held_keys["space"]-held_keys["shift"]) + direction) * self.speed
@@ -195,6 +214,7 @@ class Player(Physics):
 
     def break_block(self):
         self.world.break_block(*self.selection[0])
+        choice((pop2_sound,pop3_sound,pop_sound)).play()
 
     def place_block(self):
         pos = self.position
@@ -207,7 +227,9 @@ class Player(Physics):
 
         x,y,z = self.selection[0]+face_normals[self.selection[1]]
         if not (min_x <= x <= max_x and min_y <= y <= max_y and min_z <= z <= max_z):
-            return self.world.set_block(x,y,z, self.inventory[self.slot][0])
+            yes = self.world.set_block(x,y,z, self.inventory[self.slot][0])
+            if yes: choice((place_sound,place2_sound)).play()
+            return yes
         else:
             return False
 

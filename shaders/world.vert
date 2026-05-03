@@ -10,7 +10,7 @@ in vec3 p3d_Normal;
 out vec2 texcoord;
 out vec3 world_normal;
 flat out ivec3 block_pos;
-out int block_id;
+flat out int block_id;
 
 void main() {
     gl_Position = p3d_ModelViewProjectionMatrix * p3d_Vertex;
