@@ -11,5 +11,5 @@ pop3_sound = Audio("assets/sounds/pop3.wav", volume=5)
 place_sound = Audio("assets/sounds/place.wav", volume=10)
 place2_sound = Audio("assets/sounds/place2.wav", volume=10)
 
-music = Audio("assets/sounds/music.wav", loop=True, volume=.8)
+music = Audio("assets/sounds/music.wav", loop=True, volume=.3)
 music.play()
